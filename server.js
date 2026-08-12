@@ -42,7 +42,7 @@ async function obtenerUltimoCodigoNetflix() {
         return { asunto, codigo: match ? match[0] : "No encontrado" };
     } catch (err) {
         console.error("Error IMAP:", err);
-        return { asunto: "Error de lectura", codigo: "N/A" };
+        return { asunto: "Error real: " + err.message, codigo: "N/A" };
     }
 }
 
