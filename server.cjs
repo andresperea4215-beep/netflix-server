@@ -1,99 +1,53 @@
 const express = require('express');
-const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { JWT } = require('google-auth-library');
-const fs = require('fs');
-
+const xlsx = require('xlsx');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const serviceAccountAuth = new JWT({
-  email: process.env.GOOGLE_CREDENTIALS 
-    ? JSON.parse(process.env.GOOGLE_CREDENTIALS).client_email 
-    : require('./credenciales.json').client_email,
-  key: process.env.GOOGLE_CREDENTIALS 
-    ? JSON.parse(process.env.GOOGLE_CREDENTIALS).private_key 
-    : require('./credenciales.json').private_key,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
+app.get('/cliente/:telefono', (req, res) => {
+    const telefonoBuscado = req.params.telefono.trim();
 
-async function verificarClienteEnGoogleSheets(telefonoBuscado) {
-  try {
-    const doc = new GoogleSpreadsheet('1nsBF_TcJegNFiwTWED8_k...', serviceAccountAuth);
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-    const rows = await sheet.getRows();
+    try {
+        // Lee tu archivo clientes.xlsx
+        const workbook = xlsx.readFile('./clientes.xlsx');
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        
+        // Convertimos a JSON usando {header: 1} para tener acceso a los índices de las columnas
+        // A=0, B=1, C=2, ..., H=7, I=8, J=9, K=10
+        const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
 
-    const encontrado = rows.find(row => {
-      const telFila = row.get('B');
-      return telFila && telFila.toString().trim() === telefonoBuscado.trim();
-    });
+        // Buscamos en las filas (empezamos desde 1 para saltar los títulos)
+        let clienteEncontrado = null;
 
-    if (encontrado) {
-      return {
-        encontrado: true,
-        codigo: encontrado.get('C') // Cambia 'C' si tu código está en otra columna
-      };
-    } else {
-      return { encontrado: false };
+        for (let i = 1; i < data.length; i++) {
+            const fila = data[i];
+            
+            // Columnas: B=1, C=2, H=7, I=8, J=9, K=10
+            const telefonos = [fila[1], fila[7], fila[8], fila[9], fila[10]];
+            const correo = fila[2];
+
+            if (telefonos.includes(Number(telefonoBuscado))) {
+                clienteEncontrado = { telefono: telefonoBuscado, correo: correo };
+                break;
+            }
+        }
+
+        if (clienteEncontrado) {
+            res.send(`
+                <div style="text-align:center; padding:50px; font-family:Arial; background:#141414; color:white;">
+                    <h1>Tiendagamer507</h1>
+                    <p>Acceso verificado para:</p>
+                    <h2 style="color:#46D369;">${clienteEncontrado.correo}</h2>
+                </div>
+            `);
+        } else {
+            res.status(403).send("<h1>Acceso No Autorizado</h1>");
+        }
+    } catch (err) {
+        res.status(500).send("Error procesando el archivo Excel.");
     }
-  } catch (error) {
-    console.error("Error al leer Google Sheets:", error);
-    return { encontrado: false };
-  }
-}
-
-app.get('/cliente/:telefono', async (req, res) => {
-  const telefonoBuscado = req.params.telefono;
-  const resultado = await verificarClienteEnGoogleSheets(telefonoBuscado);
-
-  if (resultado.encontrado) {
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="es">
-      <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Tiendagamer507 - Tu Código</title>
-          <style>
-              body { font-family: Arial, sans-serif; background-color: #141414; color: white; text-align: center; padding-top: 50px; }
-              .container { background: #222; padding: 30px; border-radius: 10px; display: inline-block; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-              h1 { color: #E50914; }
-              .code { font-size: 32px; font-weight: bold; background: #333; padding: 15px; border-radius: 5px; margin-top: 20px; letter-spacing: 3px; color: #46D369; }
-          </style>
-      </head>
-      <body>
-          <div class="container">
-              <h1>Tiendagamer507</h1>
-              <p>Tu código de acceso:</p>
-              <div class="code">${resultado.codigo}</div>
-          </div>
-      </body>
-      </html>
-    `);
-  } else {
-    res.status(403).send(`
-      <!DOCTYPE html>
-      <html lang="es">
-      <head>
-          <meta charset="UTF-8">
-          <title>Acceso Denegado</title>
-          <style>
-              body { font-family: Arial, sans-serif; background-color: #141414; color: white; text-align: center; padding-top: 50px; }
-              .container { background: #222; padding: 30px; border-radius: 10px; display: inline-block; }
-              h1 { color: #E50914; }
-          </style>
-      </head>
-      <body>
-          <div class="container">
-              <h1>Acceso No Autorizado</h1>
-              <p>Este enlace ya no es válido o el número no está registrado.</p>
-          </div>
-      </body>
-      </html>
-    `);
-  }
 });
 
 app.listen(PORT, () => {
-  console.log("Servidor web activo con Google Sheets");
+    console.log("Servidor con Excel (columnas B,H,I,J,K) activo");
 });
