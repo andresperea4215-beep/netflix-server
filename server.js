@@ -18,7 +18,7 @@ const client = new ImapFlow({
 async function main() {
     await client.connect();
     await client.mailboxOpen('INBOX');
-    console.log('Servidor leyendo tu Excel y escuchando correos...');
+    console.log('Servidor activo...');
 
     client.on('exists', async (data) => {
         let message = await client.fetchOne(data.count, { source: true });
@@ -28,21 +28,17 @@ async function main() {
         const match = contenido.match(/\d{4,6}/);
         if (match) {
             const codigo = match[0];
-            
-            // LEEMOS EL EXCEL EN EL MOMENTO EXACTO EN QUE LLEGA EL CORREO
             const workbook = XLSX.readFile('clientes.xlsx');
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const excelData = XLSX.utils.sheet_to_json(sheet, { header: "A", range: 1 });
             
-            // Buscamos la fila que coincida con el correo que recibió el mensaje
             const fila = excelData.find(f => f.C && contenido.includes(String(f.C).trim()));
             
             if (fila) {
                 const columnas = ['B', 'H', 'I', 'J', 'K'];
                 for (let col of columnas) {
                     if (fila[col]) {
-                        const textoCelda = String(fila[col]);
-                        const numerosEnCelda = textoCelda.match(/\d{4,}/g);
+                        const numerosEnCelda = String(fila[col]).match(/\d{4,}/g);
                         if (numerosEnCelda) {
                             for (let tel of numerosEnCelda) {
                                 fs.writeFileSync(`code_${tel}.txt`, codigo);
@@ -55,8 +51,30 @@ async function main() {
     });
 }
 
+const esClienteActivo = (telefono) => {
+    try {
+        const workbook = XLSX.readFile('clientes.xlsx');
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const excelData = XLSX.utils.sheet_to_json(sheet, { header: "A", range: 1 });
+        
+        return excelData.some(fila => {
+            return ['B', 'H', 'I', 'J', 'K'].some(col => 
+                fila[col] && String(fila[col]).includes(telefono)
+            );
+        });
+    } catch {
+        return false;
+    }
+};
+
 app.get('/cliente/:telefono', (req, res) => {
     const telefono = req.params.telefono;
+    
+    if (!esClienteActivo(telefono)) {
+        res.send('<h1>Esperando código...</h1>');
+        return;
+    }
+
     try {
         const codigo = fs.readFileSync(`code_${telefono}.txt`, 'utf8');
         res.send(`<h1>Tiendagamer507</h1><h3>Tu código es: ${codigo}</h3>`);
