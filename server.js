@@ -7,8 +7,6 @@ const PORT = process.env.PORT || 3000;
 app.get('/cliente/:telefono', (req, res) => {
     try {
         const workbook = xlsx.readFile('clientes.xlsx');
-        
-        // Forzamos a leer específicamente la hoja llamada "NETFLIX"
         const nombreHoja = workbook.SheetNames.includes("NETFLIX") ? "NETFLIX" : workbook.SheetNames[0];
         const sheet = workbook.Sheets[nombreHoja];
         const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
@@ -18,30 +16,31 @@ app.get('/cliente/:telefono', (req, res) => {
 
         for (let i = 0; i < data.length; i++) {
             const fila = data[i];
+            if (!fila) continue; 
             
-            // Revisamos las columnas H (índice 7), I (índice 8), J (índice 9), K (índice 10) y B (índice 1)
-            const celdasATexto = [fila[7], fila[8], fila[9], fila[10], fila[1][7]]
-                .map(t => (t !== undefined && t !== null) ? String(t) : '');
+            const colB = fila[1] !== undefined ? String(fila[1]) : '';
+            const colH = fila[7] !== undefined ? String(fila[7]) : '';
+            const colI = fila[8] !== undefined ? String(fila[8]) : '';
+            const colJ = fila[9] !== undefined ? String(fila[9]) : '';
+            const colK = fila[10] !== undefined ? String(fila[10]) : '';
             
-            // Comprobamos si el número buscado aparece en el texto de alguna de estas celdas
-            const encontrado = celdasATexto.some(textoCelda => textoCelda.includes(telefonoBuscado));
-
-            if (encontrado) {
+            const celdasATexto = [colB, colH, colI, colJ, colK];
+            
+            if (celdasATexto.some(t => t.includes(telefonoBuscado))) {
                 clienteEncontrado = fila;
                 break;
             }
         }
 
         if (clienteEncontrado) {
-            // Como el correo suele estar en la columna C (índice 2) o al lado, enviamos la fila completa o un mensaje de éxito
-            res.status(200).send(`<h1>Acceso Permitido para el teléfono: ${telefonoBuscado}</h1>`);
+            res.status(200).send(`<h1>Acceso Permitido para: ${telefonoBuscado}</h1>`);
         } else {
             res.status(403).send("<h1>Acceso No Autorizado</h1>");
         }
 
     } catch (err) {
         console.error(err);
-        res.status(500).send("Error procesando el archivo");
+        res.status(500).send("Error: " + err.message);
     }
 });
 
