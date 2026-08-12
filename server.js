@@ -51,32 +51,29 @@ async function main() {
     });
 }
 
-const esClienteActivo = (telefono) => {
+app.get('/cliente/:telefono', (req, res) => {
+    const telefono = req.params.telefono;
+    const archivoCodigo = `code_${telefono}.txt`;
+
     try {
         const workbook = XLSX.readFile('clientes.xlsx');
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const excelData = XLSX.utils.sheet_to_json(sheet, { header: "A", range: 1 });
         
-        return excelData.some(fila => {
-            return ['B', 'H', 'I', 'J', 'K'].some(col => 
-                fila[col] && String(fila[col]).includes(telefono)
-            );
-        });
-    } catch {
-        return false;
-    }
-};
+        const existe = excelData.some(fila => 
+            ['B', 'H', 'I', 'J', 'K'].some(col => fila[col] && String(fila[col]).includes(telefono))
+        );
 
-app.get('/cliente/:telefono', (req, res) => {
-    const telefono = req.params.telefono;
-    
-    if (!esClienteActivo(telefono)) {
-        res.send('<h1>Esperando código...</h1>');
-        return;
-    }
+        if (!existe) {
+            // SI NO EXISTE, BORRAMOS EL ARCHIVO VIEJO PARA QUE NO SE VEA MÁS
+            if (fs.existsSync(archivoCodigo)) {
+                fs.unlinkSync(archivoCodigo);
+            }
+            res.send('<h1>Esperando código...</h1>');
+            return;
+        }
 
-    try {
-        const codigo = fs.readFileSync(`code_${telefono}.txt`, 'utf8');
+        const codigo = fs.readFileSync(archivoCodigo, 'utf8');
         res.send(`<h1>Tiendagamer507</h1><h3>Tu código es: ${codigo}</h3>`);
     } catch {
         res.send('<h1>Esperando código...</h1>');
