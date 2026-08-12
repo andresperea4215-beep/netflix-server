@@ -30,13 +30,19 @@ async function obtenerUltimoCodigoNetflix() {
         
         let latestUid = messages[messages.length - 1];
         let message = await client.fetchOne(latestUid, { source: true });
-        let parsed = await simpleParser(message.source);
         
+        if (!message || !message.source) {
+            lock.release();
+            await client.logout();
+            return { asunto: "Correo vacío", codigo: "N/A" };
+        }
+
+        let parsed = await simpleParser(message.source);
         lock.release();
         await client.logout();
 
         const asunto = parsed.subject || "Sin asunto";
-        const cuerpo = parsed.text || "";
+        const cuerpo = parsed.text || parsed.html || "";
         const match = cuerpo.match(/\d{4}/);
         
         return { asunto, codigo: match ? match[0] : "No encontrado" };
