@@ -7,10 +7,12 @@ const PORT = process.env.PORT || 3000;
 
 // Configuración de Google Auth
 const auth = new google.auth.GoogleAuth({
-    keyFile: 'credenciales.json',
+    keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'credenciales.json',
     scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+    clientOptions: {
+        subject: 'ronaldogomez1331@gmail.com'
+    }
 });
-
 async function obtenerUltimoCodigoNetflix() {
     const gmail = google.gmail({ version: 'v1', auth: await auth.getClient() });
     const res = await gmail.users.messages.list({ userId: 'me', q: 'from:Netflix', maxResults: 1 });
