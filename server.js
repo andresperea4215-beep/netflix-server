@@ -29,7 +29,9 @@ async function obtenerUltimoCodigoNetflix() {
         }
         
         let latestUid = messages[messages.length - 1];
-        let message = await client.fetchOne(latestUid, { source: true });
+        
+        // CORRECCIÓN AQUÍ: Agregamos { uid: true } para que lea el mensaje correcto por su UID
+        let message = await client.fetchOne(latestUid, { source: true }, { uid: true });
         
         if (!message || !message.source) {
             lock.release();
