@@ -1,12 +1,21 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import express from 'express';
+import XLSX from 'xlsx';
 import fs from 'fs';
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-const getClientes = () => JSON.parse(fs.readFileSync('clientes.json', 'utf8'));
+// Esta función lee tu Excel y busca el correo en la columna C y el teléfono en la B
+const getClientePorTelefono = (telefono) => {
+    const workbook = XLSX.readFile('clientes.xlsx');
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(sheet, { header: "A", range: 1 });
+    
+    // Busca en la columna B (teléfono)
+    return data.find(fila => String(fila.B) === String(telefono));
+};
 
 const client = new ImapFlow({
     host: 'imap.gmail.com',
@@ -19,57 +28,40 @@ const client = new ImapFlow({
 async function main() {
     await client.connect();
     await client.mailboxOpen('INBOX');
-    console.log('Servidor listo y escuchando correos...');
-
-    // Sistema de latido para evitar que Gmail o la red desconecten el servidor por inactividad
-    setInterval(async () => {
-        try {
-            await client.noop(); // Envía una señal vacía para mantener la conexión viva
-        } catch (err) {
-            console.log('Reconectando al buzón...');
-            try {
-                await client.connect();
-                await client.mailboxOpen('INBOX');
-            } catch (e) {
-                console.error('Error al reconectar:', e);
-            }
-        }
-    }, 30000); // Se ejecuta cada 30 segundos
+    console.log('Servidor leyendo tu Excel y escuchando correos...');
 
     client.on('exists', async (data) => {
-        try {
-            let message = await client.fetchOne(data.count, { source: true });
-            let parsed = await simpleParser(message.source);
-            
-            let clientes = getClientes();
-            let contenidoCompleto = (parsed.subject || '') + ' ' + (parsed.text || '');
+        let message = await client.fetchOne(data.count, { source: true });
+        let parsed = await simpleParser(message.source);
+        let contenido = (parsed.subject || '') + ' ' + (parsed.text || '');
+        const match = parsed.text.match(/\d{4,6}/);
 
-            for (let id in clientes) {
-                if (contenidoCompleto.includes(clientes[id].email)) {
-                    const match = parsed.text.match(/\d{4,6}/); 
-                    if (match) {
-                        clientes[id].codigo = match[0];
-                        fs.writeFileSync('clientes.json', JSON.stringify(clientes, null, 2));
-                        console.log('Codigo actualizado para', id, ':', match[0]);
-                    }
+        if (match) {
+            const codigo = match[0];
+            const workbook = XLSX.readFile('clientes.xlsx');
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(sheet, { header: "A", range: 1 });
+            
+            // Si el correo viene en el cuerpo, lo guardamos en un archivo temporal
+            data.forEach(fila => {
+                if (fila.C && contenido.includes(fila.C)) {
+                    fs.writeFileSync(`code_${fila.B}.txt`, codigo);
+                    console.log(`Código ${codigo} guardado para el cliente ${fila.B}`);
                 }
-            }
-        } catch (err) {
-            console.error('Error procesando mensaje:', err);
+            });
         }
     });
 }
 
-app.get('/cliente/:id', (req, res) => {
-    const clientes = getClientes();
-    const id = req.params.id;
-    
-    if (clientes[id] && clientes[id].activo) {
-        res.send('<h1>Tu codigo es: ' + clientes[id].codigo + '</h1>');
-    } else {
-        res.send('<h1>Acceso denegado o cliente inactivo. Contacta a Tiendagamer507</h1>');
+app.get('/cliente/:telefono', (req, res) => {
+    const telefono = req.params.telefono;
+    try {
+        const codigo = fs.readFileSync(`code_${telefono}.txt`, 'utf8');
+        res.send(`<h1>Tiendagamer507</h1><h3>Tu código es: ${codigo}</h3>`);
+    } catch {
+        res.send('<h1>Esperando código...</h1>');
     }
 });
 
-app.listen(PORT, () => console.log('Servidor web corriendo en http://localhost:3000'));
+app.listen(PORT, () => console.log('Servidor web activo'));
 main();
