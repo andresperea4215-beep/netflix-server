@@ -33,7 +33,8 @@ app.get('/cliente/:telefono', (req, res) => {
         }
 
         if (clienteEncontrado) {
-            res.status(200).send(`<h1>Acceso Permitido para: ${telefonoBuscado}</h1>`);
+            // Muestra el mensaje de acceso permitido, el teléfono y el correo (columna C / índice 2)
+            res.status(200).send(`<h1>Acceso Permitido</h1><p>Teléfono: ${telefonoBuscado}</p><h2>Correo: ${clienteEncontrado[2]}</h2>`);
         } else {
             res.status(403).send("<h1>Acceso No Autorizado</h1>");
         }
