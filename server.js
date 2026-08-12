@@ -1,26 +1,49 @@
 const express = require('express');
 const xlsx = require('xlsx');
-const { google } = require('googleapis');
-const fs = require('fs');
+const { ImapFlow } = require('imapflow');
+const { simpleParser } = require('mailparser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuración de Google Auth
-// Configuración de Google Auth
-const auth = new google.auth.GoogleAuth({
-    keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'credenciales.json',
-    scopes: ['https://www.googleapis.com/auth/gmail.readonly']
-});
 async function obtenerUltimoCodigoNetflix() {
-    const gmail = google.gmail({ version: 'v1', auth: await auth.getClient() });
-    const res = await gmail.users.messages.list({ userId: 'me', q: 'from:Netflix', maxResults: 1 });
-    if (!res.data.messages) return { asunto: "Sin correos", codigo: "N/A" };
-    
-    const msg = await gmail.users.messages.get({ userId: 'me', id: res.data.messages[0].id });
-    const asunto = msg.data.payload.headers.find(h => h.name === 'Subject').value;
-    const cuerpo = msg.data.snippet; // El código suele estar en el resumen
-    const match = cuerpo.match(/\d{6}/); // Busca un número de 6 dígitos
-    return { asunto, codigo: match ? match[0] : "No encontrado" };
+    const client = new ImapFlow({
+        host: 'imap.gmail.com',
+        port: 993,
+        secure: true,
+        auth: {
+            user: 'ronaldogomez1331@gmail.com',
+            pass: process.env.GMAIL_PASS // Aquí pondremos tu contraseña de aplicación
+        },
+        logger: false
+    });
+
+    try {
+        await client.connect();
+        let lock = await client.getMailboxLock('INBOX');
+        
+        let messages = await client.search({ from: 'netflix' }, { uid: true });
+        if (!messages || messages.length === 0) {
+            lock.release();
+            await client.logout();
+            return { asunto: "Sin correos de Netflix", codigo: "N/A" };
+        }
+        
+        let latestUid = messages[messages.length - 1];
+        let message = await client.fetchOne(latestUid, { source: true });
+        let parsed = await simpleParser(message.source);
+        
+        lock.release();
+        await client.logout();
+
+        const asunto = parsed.subject || "Sin asunto";
+        const cuerpo = parsed.text || "";
+        const match = cuerpo.match(/\d{6}/); // Busca el código de 6 dígitos
+        
+        return { asunto, codigo: match ? match[0] : "No encontrado" };
+    } catch (err) {
+        console.error("Error IMAP:", err);
+        return { asunto: "Error de lectura", codigo: "N/A" };
+    }
 }
 
 app.get('/cliente/:telefono', async (req, res) => {
