@@ -12,7 +12,7 @@ async function obtenerUltimoCodigoNetflix() {
         secure: true,
         auth: {
             user: 'ronaldogomez1331@gmail.com',
-            pass: process.env.GMAIL_PASS // Aquí pondremos tu contraseña de aplicación
+            pass: process.env.GMAIL_PASS
         },
         logger: false
     });
@@ -37,7 +37,7 @@ async function obtenerUltimoCodigoNetflix() {
 
         const asunto = parsed.subject || "Sin asunto";
         const cuerpo = parsed.text || "";
-        const match = cuerpo.match(/\d{6}/); // Busca el código de 6 dígitos
+        const match = cuerpo.match(/\d{4}/);
         
         return { asunto, codigo: match ? match[0] : "No encontrado" };
     } catch (err) {
