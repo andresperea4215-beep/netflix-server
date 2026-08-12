@@ -28,10 +28,13 @@ async function main() {
         const match = contenido.match(/\d{4,6}/);
         if (match) {
             const codigo = match[0];
+            
+            // LEEMOS EL EXCEL EN EL MOMENTO EXACTO EN QUE LLEGA EL CORREO
             const workbook = XLSX.readFile('clientes.xlsx');
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const excelData = XLSX.utils.sheet_to_json(sheet, { header: "A", range: 1 });
             
+            // Buscamos la fila que coincida con el correo que recibió el mensaje
             const fila = excelData.find(f => f.C && contenido.includes(String(f.C).trim()));
             
             if (fila) {
