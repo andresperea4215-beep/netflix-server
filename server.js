@@ -89,6 +89,8 @@ app.get('/cliente/:telefono', async (req, res) => {
                             align-items: center;
                             min-height: 100vh;
                             margin: 0;
+                            overflow: hidden;
+                            position: relative;
                         }
                         .container {
                             background: rgba(255, 255, 255, 0.05);
@@ -100,6 +102,7 @@ app.get('/cliente/:telefono', async (req, res) => {
                             width: 90%;
                             max-width: 400px;
                             box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+                            z-index: 2;
                         }
                         .status { color: #46d369; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9em; margin-bottom: 10px; }
                         .email { color: #b3b3b3; margin-bottom: 30px; font-size: 0.9em; }
@@ -112,6 +115,21 @@ app.get('/cliente/:telefono', async (req, res) => {
                         .code-label { color: #777; font-size: 0.8em; margin-bottom: 5px; }
                         .code { font-size: 3em; font-weight: 800; letter-spacing: 8px; color: white; margin: 5px 0; }
                         .info { color: #777; font-size: 0.8em; margin-top: 20px; }
+                        
+                        /* Estilo para la imagen de Goku en la esquina */
+                        .corner-goku {
+                            position: fixed;
+                            bottom: -10px;
+                            right: -10px;
+                            width: 130px;
+                            height: auto;
+                            opacity: 0.9;
+                            z-index: 1;
+                            pointer-events: none;
+                        }
+                        @media (max-width: 480px) {
+                            .corner-goku { width: 90px; }
+                        }
                     </style>
                 </head>
                 <body>
@@ -128,6 +146,9 @@ app.get('/cliente/:telefono', async (req, res) => {
                             ${infoNetflix.asunto}
                         </div>
                     </div>
+
+                    <!-- Imagen de Goku en la esquina inferior derecha -->
+                    <img src="https://i.imgur.com/83Z5uaB.png" alt="Goku" class="corner-goku">
                 </body>
                 </html>
             `);
