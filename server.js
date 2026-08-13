@@ -144,7 +144,7 @@ app.get('/cliente/:telefono', async (req, res) => {
                         </div>
                     </div>
 
-                    <img src="goku.jpg" alt="Goku" class="corner-goku">
+                    <img src="/goku.jpg" alt="Goku" class="corner-goku">
                 </body>
                 </html>
             `);
