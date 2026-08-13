@@ -62,9 +62,18 @@ app.get('/cliente/:telefono', async (req, res) => {
         const sheet = workbook.Sheets["NETFLIX"];
         const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
         const telefonoBuscado = String(req.params.telefono).trim();
-        let clienteEncontrado = data.find(fila => [fila[1], fila[7], fila[8], fila[9], fila[10]].map(String).includes(telefonoBuscado));
+        let clienteEncontrado = null;
+        for (let fila of data) {
+            const celdas = [fila[1], fila[7], fila[8], fila[9], fila[10]].map(c => String(c || '').trim());
+            if (celdas.some(c => c.includes(telefonoBuscado))) {
+                clienteEncontrado = fila;
+                break;
+            }
+        }
 
-        if (!clienteEncontrado) return res.status(403).send("<h1>Acceso No Autorizado</h1>");
+        if (!clienteEncontrado) {
+            return res.status(403).send("<h1>Acceso No Autorizado</h1>");
+        }
 
         const info = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
         
