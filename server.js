@@ -5,7 +5,6 @@ const { simpleParser } = require('mailparser');
 const app = express();
 
 app.use(express.static('.'));
-
 const PORT = process.env.PORT || 3000;
 
 async function obtenerUltimoCodigoNetflix(emailCuenta) {
@@ -23,30 +22,37 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
     try {
         await client.connect();
         let lock = await client.getMailboxLock('INBOX');
-        
         let messages = await client.search({ to: emailCuenta }, { uid: true });
         
         if (!messages || messages.length === 0) {
             lock.release();
             await client.logout();
-            return { asunto: "Sin correos nuevos para esta cuenta", codigo: "N/A" };
+            return { tipo: "texto", codigo: "N/A", asunto: "Sin correos nuevos" };
         }
         
         let latestUid = messages[messages.length - 1];
         let message = await client.fetchOne(latestUid, { source: true }, { uid: true });
-
         let parsed = await simpleParser(message.source);
         lock.release();
         await client.logout();
 
-        const asunto = parsed.subject || "Código Netflix";
         const cuerpo = parsed.text || parsed.html || "";
-        const match = cuerpo.match(/\d{4}/);
+        const matchCodigo = cuerpo.match(/\d{4}/);
         
-        return { asunto, codigo: match ? match[0] : "No encontrado" };
+        // Si hay código de 4 dígitos, lo retornamos como tipo "texto"
+        if (matchCodigo) {
+            return { tipo: "texto", codigo: matchCodigo[0], asunto: parsed.subject };
+        } 
+        
+        // Si no, buscamos un enlace de Netflix
+        const matchLink = cuerpo.match(/https:\/\/u\.netflix\.com\/[^\s"'>]+/);
+        if (matchLink) {
+            return { tipo: "enlace", url: matchLink[0], asunto: "Ver temporalmente (14 días)" };
+        }
+
+        return { tipo: "texto", codigo: "No encontrado", asunto: "Correo recibido sin código" };
     } catch (err) {
-        console.error("Error IMAP:", err);
-        return { asunto: "Error", codigo: "N/A" };
+        return { tipo: "texto", codigo: "Error", asunto: "Error al leer correo" };
     }
 }
 
@@ -56,104 +62,47 @@ app.get('/cliente/:telefono', async (req, res) => {
         const sheet = workbook.Sheets["NETFLIX"];
         const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
         const telefonoBuscado = String(req.params.telefono).trim();
+        let clienteEncontrado = data.find(fila => [fila[1], fila[7], fila[8], fila[9], fila[10]].map(String).includes(telefonoBuscado));
+
+        if (!clienteEncontrado) return res.status(403).send("<h1>Acceso No Autorizado</h1>");
+
+        const info = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
         
-        let clienteEncontrado = null;
-        for (let fila of data) {
-            const celdas = [fila[1], fila[7], fila[8], fila[9], fila[10]].map(c => String(c || ''));
-            if (celdas.some(c => c.includes(telefonoBuscado))) {
-                clienteEncontrado = fila;
-                break;
-            }
-        }
+        let contenidoExtra = info.tipo === "texto" ? `
+            <div class="code-label">CÓDIGO DE SEGURIDAD</div>
+            <div class="code">${info.codigo}</div>` : `
+            <div class="code-label">VERIFICACIÓN TEMPORAL</div>
+            <a href="${info.url}" target="_blank" style="display:block; background:#E50914; color:white; padding:15px; border-radius:8px; text-decoration:none; margin-top:15px; font-weight:bold;">
+                🔗 Abrir Enlace de 14 Días
+            </a>`;
 
-        if (clienteEncontrado) {
-            const infoNetflix = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
-            res.status(200).send(`
-                <!DOCTYPE html>
-                <html lang="es">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Panel de Acceso</title>
-                    <style>
-                        :root { --netflix-red: #E50914; --dark-bg: #0B0B0B; }
-                        body {
-                            background-color: var(--dark-bg);
-                            background-image: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
-                            color: white;
-                            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            min-height: 100vh;
-                            margin: 0;
-                            overflow: hidden;
-                            position: relative;
-                        }
-                        .container {
-                            background: rgba(255, 255, 255, 0.05);
-                            backdrop-filter: blur(15px);
-                            padding: 40px;
-                            border-radius: 20px;
-                            border: 1px solid rgba(255, 255, 255, 0.1);
-                            text-align: center;
-                            width: 90%;
-                            max-width: 400px;
-                            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
-                            z-index: 2;
-                        }
-                        .status { color: #46d369; font-weight: bold; text-transform: uppercase; letter-spacing: 2px; font-size: 0.9em; margin-bottom: 10px; }
-                        .email { color: #b3b3b3; margin-bottom: 30px; font-size: 0.9em; }
-                        .code-box {
-                            background: #141414;
-                            border-top: 3px solid var(--netflix-red);
-                            padding: 25px;
-                            border-radius: 10px;
-                        }
-                        .code-label { color: #777; font-size: 0.8em; margin-bottom: 5px; }
-                        .code { font-size: 3em; font-weight: 800; letter-spacing: 8px; color: white; margin: 5px 0; }
-                        .info { color: #777; font-size: 0.8em; margin-top: 20px; }
-                        
-                        .corner-goku {
-                            position: fixed;
-                            bottom: -10px;
-                            right: -10px;
-                            width: 130px;
-                            height: auto;
-                            opacity: 0.9;
-                            z-index: 1;
-                            pointer-events: none;
-                        }
-                        @media (max-width: 480px) {
-                            .corner-goku { width: 90px; }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="container">
-                        <div class="status">● Acceso Verificado</div>
-                        <div class="email">${clienteEncontrado[2]}</div>
-                        
-                        <div class="code-box">
-                            <div class="code-label">CÓDIGO DE SEGURIDAD</div>
-                            <div class="code">${infoNetflix.codigo}</div>
-                        </div>
-                        
-                        <div class="info">
-                            ${infoNetflix.asunto}
-                        </div>
-                    </div>
-
-                    <img src="/goku.jpg" alt="Goku" class="corner-goku">
-                </body>
-                </html>
-            `);
-        } else {
-            res.status(403).send("<h1>Acceso No Autorizado</h1>");
-        }
-    } catch (err) {
-        res.status(500).send("Error: " + err.message);
-    }
+        res.status(200).send(`
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Panel de Acceso</title>
+                <style>
+                    body { background: #0B0B0B; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+                    .container { background: rgba(255,255,255,0.05); backdrop-filter: blur(15px); padding: 40px; border-radius: 20px; text-align: center; width: 90%; max-width: 400px; }
+                    .status { color: #46d369; font-weight: bold; margin-bottom: 10px; }
+                    .code-box { background: #141414; border-top: 3px solid #E50914; padding: 25px; border-radius: 10px; }
+                    .code { font-size: 3em; font-weight: 800; letter-spacing: 8px; margin: 5px 0; }
+                    .corner-goku { position: fixed; bottom: -10px; right: -10px; width: 130px; pointer-events: none; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="status">● Acceso Verificado</div>
+                    <div style="color: #b3b3b3; margin-bottom: 20px;">${clienteEncontrado[2]}</div>
+                    <div class="code-box">${contenidoExtra}</div>
+                    <div style="color: #777; font-size: 0.8em; margin-top: 20px;">${info.asunto}</div>
+                </div>
+                <img src="/goku.jpg" alt="Goku" class="corner-goku">
+            </body>
+            </html>
+        `);
+    } catch (err) { res.status(500).send("Error: " + err.message); }
 });
 
 app.listen(PORT, () => console.log("Servidor listo"));
