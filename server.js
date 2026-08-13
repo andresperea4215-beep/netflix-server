@@ -3,9 +3,12 @@ const xlsx = require('xlsx');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const app = express();
+
+app.use(express.static('.'));
+
 const PORT = process.env.PORT || 3000;
 
-async function obtenerUltimoCodigoNetflix() {
+async function obtenerUltimoCodigoNetflix(emailCuenta) {
     const client = new ImapFlow({
         host: 'imap.gmail.com',
         port: 993,
@@ -21,34 +24,29 @@ async function obtenerUltimoCodigoNetflix() {
         await client.connect();
         let lock = await client.getMailboxLock('INBOX');
         
-        let messages = await client.search({ from: 'netflix' }, { uid: true });
+        let messages = await client.search({ to: emailCuenta }, { uid: true });
+        
         if (!messages || messages.length === 0) {
             lock.release();
             await client.logout();
-            return { asunto: "Sin correos de Netflix", codigo: "N/A" };
+            return { asunto: "Sin correos nuevos para esta cuenta", codigo: "N/A" };
         }
         
         let latestUid = messages[messages.length - 1];
         let message = await client.fetchOne(latestUid, { source: true }, { uid: true });
-        
-        if (!message || !message.source) {
-            lock.release();
-            await client.logout();
-            return { asunto: "Correo vacío", codigo: "N/A" };
-        }
 
         let parsed = await simpleParser(message.source);
         lock.release();
         await client.logout();
 
-        const asunto = parsed.subject || "Sin asunto";
+        const asunto = parsed.subject || "Código Netflix";
         const cuerpo = parsed.text || parsed.html || "";
         const match = cuerpo.match(/\d{4}/);
         
         return { asunto, codigo: match ? match[0] : "No encontrado" };
     } catch (err) {
         console.error("Error IMAP:", err);
-        return { asunto: "Error real: " + err.message, codigo: "N/A" };
+        return { asunto: "Error", codigo: "N/A" };
     }
 }
 
@@ -69,7 +67,7 @@ app.get('/cliente/:telefono', async (req, res) => {
         }
 
         if (clienteEncontrado) {
-            const infoNetflix = await obtenerUltimoCodigoNetflix();
+            const infoNetflix = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
             res.status(200).send(`
                 <!DOCTYPE html>
                 <html lang="es">
@@ -116,7 +114,6 @@ app.get('/cliente/:telefono', async (req, res) => {
                         .code { font-size: 3em; font-weight: 800; letter-spacing: 8px; color: white; margin: 5px 0; }
                         .info { color: #777; font-size: 0.8em; margin-top: 20px; }
                         
-                        /* Estilo para la imagen de Goku en la esquina */
                         .corner-goku {
                             position: fixed;
                             bottom: -10px;
@@ -147,8 +144,7 @@ app.get('/cliente/:telefono', async (req, res) => {
                         </div>
                     </div>
 
-                    <!-- Imagen de Goku en la esquina inferior derecha -->
-                    <img src="https://i.imgur.com/83Z5uaB.png" alt="Goku" class="corner-goku">
+                    <img src="goku.jpg" alt="Goku" class="corner-goku">
                 </body>
                 </html>
             `);
