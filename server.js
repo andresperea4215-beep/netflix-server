@@ -37,17 +37,17 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
         await client.logout();
 
         const cuerpo = parsed.text || parsed.html || "";
-        const matchCodigo = cuerpo.match(/\d{4}/);
         
-        // Si hay código de 4 dígitos, lo retornamos como tipo "texto"
-        if (matchCodigo) {
-            return { tipo: "texto", codigo: matchCodigo[0], asunto: parsed.subject };
-        } 
-        
-        // Si no, buscamos un enlace de Netflix
+        // 1. Primero revisamos si el correo trae el enlace oficial de Netflix (temporal)
         const matchLink = cuerpo.match(/https:\/\/u\.netflix\.com\/[^\s"'>]+/);
         if (matchLink) {
-            return { tipo: "enlace", url: matchLink[0], asunto: "Ver temporalmente (14 días)" };
+            return { tipo: "enlace", url: matchLink[0], asunto: "Enlace de 14 días disponible" };
+        }
+
+        // 2. Si NO trae enlace, entonces buscamos el código de 4 dígitos normal
+        const matchCodigo = cuerpo.match(/\d{4}/);
+        if (matchCodigo) {
+            return { tipo: "texto", codigo: matchCodigo[0], asunto: "Código recibido recientemente" };
         }
 
         return { tipo: "texto", codigo: "No encontrado", asunto: "Correo recibido sin código" };
