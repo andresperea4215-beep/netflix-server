@@ -25,34 +25,52 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
         let messages = await client.search({ to: emailCuenta }, { uid: true });
         
         if (!messages || messages.length === 0) {
-            lock.release();
+            lock.release(); 
             await client.logout();
-            return { tipo: "texto", codigo: "N/A", asunto: "Sin correos nuevos" };
+            return { tipo: "texto", codigo: "---", asunto: "No se han recibido códigos actualmente" };
         }
         
         let latestUid = messages[messages.length - 1];
-        let message = await client.fetchOne(latestUid, { source: true }, { uid: true });
+        let message = await client.fetchOne(latestUid, { source: true, envelope: true }, { uid: true });
+        
+        // --- FILTRO DE TIEMPO (20 MINUTOS) ---
+        const fechaCorreo = new Date(message.envelope.date);
+        const ahora = new Date();
+        const diferenciaMinutos = (ahora - fechaCorreo) / 1000 / 60;
+
+        if (diferenciaMinutos > 1440) {
+            lock.release(); 
+            await client.logout();
+            return { tipo: "texto", codigo: "---", asunto: "No se han recibido códigos recientes (vencido)" };
+        }
+        // -------------------------------------
+
         let parsed = await simpleParser(message.source);
         lock.release();
         await client.logout();
 
+        const asunto = (parsed.subject || "").toLowerCase();
         const cuerpo = parsed.text || parsed.html || "";
-        
-        // 1. Primero revisamos si el correo trae el enlace oficial de Netflix (temporal)
-        const matchLink = cuerpo.match(/https:\/\/u\.netflix\.com\/[^\s"'>]+/);
-        if (matchLink) {
-            return { tipo: "enlace", url: matchLink[0], asunto: "Enlace de 14 días disponible" };
+
+        console.log("Asunto recibido:", parsed.subject);
+
+        // 1. Si es correo de verificación temporal o enlace
+        if (asunto.includes("temporal") || asunto.includes("14") || cuerpo.includes("u.netflix.com")) {
+            const matchLink = cuerpo.match(/https?:\/\/u\.netflix\.com\/[^\s"'>]+/);
+            if (matchLink) {
+                return { tipo: "enlace", url: matchLink[0], asunto: parsed.subject };
+            }
         }
 
-        // 2. Si NO trae enlace, entonces buscamos el código de 4 dígitos normal
-        const matchCodigo = cuerpo.match(/\d{4}/);
+        // 2. Si es código de inicio de sesión normal de 4 dígitos
+        const matchCodigo = cuerpo.match(/\b\d{4}\b/);
         if (matchCodigo) {
-            return { tipo: "texto", codigo: matchCodigo[0], asunto: "Código recibido recientemente" };
-        }
+            return { tipo: "texto", codigo: matchCodigo[0], asunto: parsed.subject };
+        } 
 
-        return { tipo: "texto", codigo: "No encontrado", asunto: "Correo recibido sin código" };
+        return { tipo: "texto", codigo: "---", asunto: "Correo recibido sin formato reconocido" };
     } catch (err) {
-        return { tipo: "texto", codigo: "Error", asunto: "Error al leer correo" };
+        return { tipo: "texto", codigo: "Error", asunto: "Error al verificar" };
     }
 }
 
@@ -62,6 +80,7 @@ app.get('/cliente/:telefono', async (req, res) => {
         const sheet = workbook.Sheets["NETFLIX"];
         const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
         const telefonoBuscado = String(req.params.telefono).trim();
+        
         let clienteEncontrado = null;
         for (let fila of data) {
             const celdas = [fila[1], fila[7], fila[8], fila[9], fila[10]].map(c => String(c || '').trim());
