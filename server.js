@@ -25,25 +25,22 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
         let messages = await client.search({ to: emailCuenta }, { uid: true });
         
         if (!messages || messages.length === 0) {
-            lock.release(); 
-            await client.logout();
+            lock.release(); await client.logout();
             return { tipo: "texto", codigo: "---", asunto: "No se han recibido códigos actualmente" };
         }
         
         let latestUid = messages[messages.length - 1];
         let message = await client.fetchOne(latestUid, { source: true, envelope: true }, { uid: true });
         
-        // --- FILTRO DE TIEMPO (20 MINUTOS) ---
+        // Margen de 24 horas (1440 minutos)
         const fechaCorreo = new Date(message.envelope.date);
         const ahora = new Date();
         const diferenciaMinutos = (ahora - fechaCorreo) / 1000 / 60;
 
         if (diferenciaMinutos > 1440) {
-            lock.release(); 
-            await client.logout();
+            lock.release(); await client.logout();
             return { tipo: "texto", codigo: "---", asunto: "No se han recibido códigos recientes (vencido)" };
         }
-        // -------------------------------------
 
         let parsed = await simpleParser(message.source);
         lock.release();
@@ -52,21 +49,27 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
         const asunto = (parsed.subject || "").toLowerCase();
         const cuerpo = parsed.text || parsed.html || "";
 
-        console.log("Asunto recibido:", parsed.subject);
+        console.log("Asunto exacto recibido:", parsed.subject);
 
-        // 1. Si es correo de verificación temporal o enlace
-        if (asunto.includes("temporal") || asunto.includes("14") || cuerpo.includes("u.netflix.com")) {
-            const matchLink = cuerpo.match(/https?:\/\/u\.netflix\.com\/[^\s"'>]+/);
-            if (matchLink) {
-                return { tipo: "enlace", url: matchLink[0], asunto: parsed.subject };
-            }
+        // 1. Lógica para Acceso Temporal (Botón)
+        if (asunto.includes("acceso temporal")) {
+            return { 
+                tipo: "enlace_especial", 
+                url: "https://www.netflix.com/account", 
+                asunto: "Verificación Temporal" 
+            };
         }
 
-        // 2. Si es código de inicio de sesión normal de 4 dígitos
+        // 2. Lógica para Inicio de Sesión (Código 4 dígitos)
         const matchCodigo = cuerpo.match(/\b\d{4}\b/);
+        if (asunto.includes("inicio de sesión") && matchCodigo) {
+            return { tipo: "texto", codigo: matchCodigo[0], asunto: "Código de Inicio de Sesión" };
+        }
+
+        // 3. Fallback genérico
         if (matchCodigo) {
             return { tipo: "texto", codigo: matchCodigo[0], asunto: parsed.subject };
-        } 
+        }
 
         return { tipo: "texto", codigo: "---", asunto: "Correo recibido sin formato reconocido" };
     } catch (err) {
@@ -90,47 +93,45 @@ app.get('/cliente/:telefono', async (req, res) => {
             }
         }
 
-        if (!clienteEncontrado) {
-            return res.status(403).send("<h1>Acceso No Autorizado</h1>");
-        }
+        if (!clienteEncontrado) return res.status(403).send("<h1>Acceso No Autorizado</h1>");
 
         const info = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
         
-        let contenidoExtra = info.tipo === "texto" ? `
-            <div class="code-label">CÓDIGO DE SEGURIDAD</div>
-            <div class="code">${info.codigo}</div>` : `
-            <div class="code-label">VERIFICACIÓN TEMPORAL</div>
-            <a href="${info.url}" target="_blank" style="display:block; background:#E50914; color:white; padding:15px; border-radius:8px; text-decoration:none; margin-top:15px; font-weight:bold;">
-                🔗 Abrir Enlace de 14 Días
-            </a>`;
+        let contenidoExtra = '';
+        if (info.tipo === "texto") {
+            contenidoExtra = `<div class="code-label">CÓDIGO</div><div class="code">${info.codigo}</div>`;
+        } else if (info.tipo === "enlace_especial") {
+            contenidoExtra = `
+                <div class="code-label">VERIFICACIÓN TEMPORAL</div>
+                <a href="${info.url}" target="_blank" style="display:block; background:#E50914; color:white; padding:15px; border-radius:8px; text-decoration:none; margin-top:15px; font-weight:bold;">
+                    Obtener Código en Netflix
+                </a>`;
+        }
 
         res.status(200).send(`
             <!DOCTYPE html>
-            <html lang="es">
+            <html>
             <head>
-                <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Panel de Acceso</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <style>
                     body { background: #0B0B0B; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-                    .container { background: rgba(255,255,255,0.05); backdrop-filter: blur(15px); padding: 40px; border-radius: 20px; text-align: center; width: 90%; max-width: 400px; }
-                    .status { color: #46d369; font-weight: bold; margin-bottom: 10px; }
+                    .container { background: rgba(255,255,255,0.05); padding: 40px; border-radius: 20px; text-align: center; width: 90%; max-width: 400px; }
                     .code-box { background: #141414; border-top: 3px solid #E50914; padding: 25px; border-radius: 10px; }
-                    .code { font-size: 3em; font-weight: 800; letter-spacing: 8px; margin: 5px 0; }
-                    .corner-goku { position: fixed; bottom: -10px; right: -10px; width: 130px; pointer-events: none; }
+                    .code { font-size: 3em; font-weight: 800; margin: 5px 0; }
+                    .corner-goku { position: fixed; bottom: -10px; right: -10px; width: 130px; }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <div class="status">● Acceso Verificado</div>
-                    <div style="color: #b3b3b3; margin-bottom: 20px;">${clienteEncontrado[2]}</div>
+                    <div style="color: #46d369;">● Acceso Verificado</div>
                     <div class="code-box">${contenidoExtra}</div>
-                    <div style="color: #777; font-size: 0.8em; margin-top: 20px;">${info.asunto}</div>
+                    <div style="color: #777; margin-top: 20px;">${info.asunto}</div>
                 </div>
-                <img src="/goku.jpg" alt="Goku" class="corner-goku">
+                <img src="/goku.jpg" class="corner-goku">
             </body>
             </html>
         `);
-    } catch (err) { res.status(500).send("Error: " + err.message); }
+    } catch (err) { res.status(500).send("Error"); }
 });
 
 app.listen(PORT, () => console.log("Servidor listo"));
