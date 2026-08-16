@@ -37,7 +37,7 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
         const ahora = new Date();
         const diferenciaMinutos = (ahora - fechaCorreo) / 1000 / 60;
 
-        if (diferenciaMinutos > 1440) {
+        if (diferenciaMinutos > 20) {
             lock.release(); await client.logout();
             return { tipo: "texto", codigo: "---", asunto: "No se han recibido códigos recientes (vencido)" };
         }
@@ -127,7 +127,7 @@ app.get('/cliente/:telefono', async (req, res) => {
                     <div class="code-box">${contenidoExtra}</div>
                     <div style="color: #777; margin-top: 20px;">${info.asunto}</div>
                 </div>
-                <img src="/goku.jpg" class="corner-goku">
+                <img src="/gojo.png" class="corner-goku">
             </body>
             </html>
         `);
