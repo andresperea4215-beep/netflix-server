@@ -123,7 +123,7 @@ app.get('/cliente/:telefono', async (req, res) => {
             </head>
             <body>
                 <div class="container">
-                <div style="color: #ccc; font-size: 18px; margin-bottom: 10px;">Correo: <b>${emailCuenta}</b></div>
+                <div style="color: #ccc; font-size: 18px; margin-bottom: 10px;">Correo: <b>${clienteEncontrado[2]}</b></div>
                     <div style="color: #46d369;">● Acceso Verificado</div>
                     <div class="code-box">${contenidoExtra}</div>
                     <div style="color: #777; margin-top: 20px;">${info.asunto}</div>
