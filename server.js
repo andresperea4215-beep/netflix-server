@@ -157,5 +157,8 @@ app.get('/cliente/:telefono', async (req, res) => {
         `);
     } catch (err) { res.status(500).send("Error de Servidor"); }
 });
-
+// Ruta principal para que UptimeRobot vea que el servidor está vivo
+app.get('/', (req, res) => {
+    res.status(200).send("El servidor de Netflix está ACTIVO y DESPIERTO 🟢");
+});
 app.listen(PORT, () => console.log("Servidor listo"));
