@@ -1,164 +1,139 @@
 const express = require('express');
-const xlsx = require('xlsx');
-const { ImapFlow } = require('imapflow');
-const { simpleParser } = require('mailparser');
-const app = express();
+const { google } = require('googleapis');
+const path = require('path');
 
-app.use(express.static('.'));
+const app = express();
 const PORT = process.env.PORT || 3000;
 
-async function obtenerUltimoCodigoNetflix(emailCuenta) {
-    const client = new ImapFlow({
-        host: 'imap.gmail.com',
-        port: 993,
-        secure: true,
-        auth: {
-            user: 'ronaldogomez1331@gmail.com',
-            pass: process.env.GMAIL_PASS
-        },
-        logger: false
-    });
+// Permite cargar tu imagen de Gojo en la web
+app.use(express.static(__dirname));
 
-    try {
-        await client.connect();
-        let lock = await client.getMailboxLock('INBOX');
-        let messages = await client.search({ to: emailCuenta }, { uid: true });
-        
-        if (!messages || messages.length === 0) {
-            lock.release(); await client.logout();
-            return { inicio: null, temporalUrl: null };
-        }
-        
-        let recentUids = messages.slice(-3).reverse(); 
-        
-        let codigoInicio = null;
-        let urlTemporal = null;
+// Configuración de Autenticación de Gmail
+const auth = new google.auth.GoogleAuth({
+    keyFile: path.join(__dirname, 'credenciales.json'),
+    scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+});
 
-        for (let uid of recentUids) {
-            let message = await client.fetchOne(uid, { source: true, envelope: true }, { uid: true });
-            
-            const fechaCorreo = new Date(message.envelope.date);
-            const ahora = new Date();
-            const diferenciaMinutos = (ahora - fechaCorreo) / 1000 / 60;
-
-            // Margen operativo ajustado a 15 minutos
-            if (diferenciaMinutos > 15) continue;
-
-            let parsed = await simpleParser(message.source);
-            const asunto = (parsed.subject || "").toLowerCase();
-            const cuerpo = parsed.text || parsed.html || "";
-
-            // 1. Lógica para Inicio de Sesión
-            if (!codigoInicio && asunto.includes("inicio de sesión")) {
-                const matchCodigo = cuerpo.match(/\b\d{4}\b/);
-                if (matchCodigo) codigoInicio = matchCodigo[0];
-            }
-
-            // 2. Lógica para Acceso Temporal (Atrapar enlace mágico para el botón)
-            if (!urlTemporal && (asunto.includes("acceso temporal") || asunto.includes("actualización"))) {
-                const linkRegex = /https:\/\/(www\.)?netflix\.com\/account\/travel\/verify\?nftoken=[a-zA-Z0-9_-]+/i;
-                const matchLink = cuerpo.match(linkRegex);
-                
-                if (matchLink) {
-                    urlTemporal = matchLink[0];
-                }
-            }
-        }
-
-        lock.release();
-        await client.logout();
-
-        return { inicio: codigoInicio, temporalUrl: urlTemporal };
-
-    } catch (err) {
-        return { inicio: null, temporalUrl: null, error: true };
-    }
-}
-
+// Ruta para extraer el código del cliente
 app.get('/cliente/:telefono', async (req, res) => {
     try {
-        const workbook = xlsx.readFile('clientes.xlsx');
-        const sheet = workbook.Sheets["NETFLIX"];
-        const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
-        const telefonoBuscado = String(req.params.telefono).trim();
-        
-        let clienteEncontrado = null;
-        for (let fila of data) {
-            const celdas = [fila[1], fila[7], fila[8], fila[9], fila[10]].map(c => String(c || '').trim());
-            if (celdas.some(c => c.includes(telefonoBuscado))) {
-                clienteEncontrado = fila;
-                break;
+        const telefonoCliente = req.params.telefono;
+        const gmail = google.gmail({ version: 'v1', auth });
+
+        // BÚSQUEDA DE 24 HORAS (newer_than:1d)
+        const response = await gmail.users.messages.list({
+            userId: 'me',
+            q: 'from:info@mailer.netflix.com newer_than:1d',
+            maxResults: 1 // Toma solo el correo más reciente
+        });
+
+        const messages = response.data.messages;
+        let netflixLink = null;
+
+        if (messages && messages.length > 0) {
+            const messageId = messages[0].id;
+            const msg = await gmail.users.messages.get({
+                userId: 'me',
+                id: messageId,
+                format: 'full'
+            });
+
+            // Leer el cuerpo del correo
+            let body = '';
+            const parts = msg.data.payload.parts;
+            if (parts) {
+                const htmlPart = parts.find(part => part.mimeType === 'text/html');
+                if (htmlPart && htmlPart.body.data) {
+                    body = Buffer.from(htmlPart.body.data, 'base64').toString('utf-8');
+                }
+            } else if (msg.data.payload.body.data) {
+                body = Buffer.from(msg.data.payload.body.data, 'base64').toString('utf-8');
+            }
+
+            // NUEVO RADAR: Extrae el enlace mágico completo sin cortarlo
+            const linkRegex = /https:\/\/(www\.)?netflix\.com\/account\/travel\/verify\?nftoken=[^"'\s<]+/i;
+            const match = body.match(linkRegex);
+
+            if (match) {
+                netflixLink = match[0];
             }
         }
 
-        if (!clienteEncontrado) return res.status(403).send("<h1>Acceso No Autorizado</h1>");
-
-        const info = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
-        
-        let contenidoExtra = '';
-        
-        // Apartado 1: Código de Inicio (Recuadro con borde Blanco)
-        if (info.inicio) {
-            contenidoExtra += `
-                <div class="code-box" style="border: 2px solid white;">
-                    <div class="code-label" style="color: #ccc; font-size: 14px; text-transform: uppercase; margin-bottom: 15px; font-weight: bold;">CÓDIGO DE INICIO DE SESIÓN</div>
-                    <div class="code">${info.inicio}</div>
-                </div>
-            `;
-        }
-        
-        // Apartado 2: Acceso Temporal (Recuadro con borde Rojo)
-        if (info.temporalUrl) {
-            contenidoExtra += `
-                <div class="code-box" style="border: 2px solid #E50914;">
-                    <div class="code-label" style="color: #ccc; font-size: 14px; text-transform: uppercase; margin-bottom: 15px; font-weight: bold;">CÓDIGO VER TEMPORALMENTE</div>
-                    
-                    <div style="font-size: 13px; color: #aaa; margin-bottom: 8px;">Para ver el código presiona aquí ⬇️</div>
-                    
-                    <a href="${info.temporalUrl}" target="_blank" style="display:block; background:#E50914; color:white; padding:15px; border-radius:8px; text-decoration:none; font-weight:bold; font-size: 18px;">
-                        Obtener Código en Netflix
-                    </a>
-                </div>
-            `;
-        }
-
-        // Si no hay nada en 15 minutos (Recuadro gris apagado)
-        if (!info.inicio && !info.temporalUrl) {
-            contenidoExtra = `
-                <div class="code-box" style="border: 2px solid #333;">
-                    <div class="code" style="font-size: 1.5em; color: #555;">---</div>
-                </div>
-                <div style="color: #777; margin-top: 20px;">No hay códigos generados en los últimos 15 minutos</div>
-            `;
-        }
-
-        res.status(200).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    body { background: #0B0B0B; color: white; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-                    .container { background: rgba(255,255,255,0.05); padding: 40px; border-radius: 20px; text-align: center; width: 90%; max-width: 400px; z-index: 2; position: relative; }
-                    .code-box { background: #141414; padding: 25px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-                    .code { font-size: 3em; font-weight: 800; margin: 5px 0; letter-spacing: 5px; }
-                    .corner-goku { position: fixed; bottom: -10px; right: -10px; width: 130px; z-index: 1; pointer-events: none; }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div style="color: #ccc; font-size: 18px; margin-bottom: 10px;">Correo: <b>${clienteEncontrado[2]}</b></div>
-                    <div style="color: #46d369; font-weight: bold; margin-bottom: 15px;">● Acceso Verificado</div>
-                    ${contenidoExtra}
-                </div>
-                <img src="/gojo.png" class="corner-goku">
-            </body>
-            </html>
+        // Diseño de la página web que verá el cliente
+        res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Acceso Netflix</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    background-color: #141414;
+                    color: white;
+                    text-align: center;
+                    padding: 50px 20px;
+                    margin: 0;
+                }
+                .caja-roja {
+                    background-color: #E50914;
+                    border-radius: 10px;
+                    padding: 30px;
+                    max-width: 400px;
+                    margin: 0 auto;
+                    box-shadow: 0 4px 15px rgba(229, 9, 20, 0.4);
+                }
+                h2 { margin-top: 0; }
+                .boton {
+                    display: inline-block;
+                    background-color: white;
+                    color: #E50914;
+                    padding: 15px 30px;
+                    font-size: 18px;
+                    font-weight: bold;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    margin-top: 20px;
+                    border: none;
+                }
+                .boton:hover { background-color: #f3f3f3; }
+                .no-codigo {
+                    color: #ccc;
+                    font-size: 16px;
+                    margin-top: 20px;
+                }
+                .corner-goku {
+                    position: fixed;
+                    bottom: 10px;
+                    right: 10px;
+                    width: 100px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="caja-roja">
+                <h2>ACCESO TEMPORAL NETFLIX</h2>
+                <p>Cliente: ${telefonoCliente}</p>
+                ${netflixLink 
+                    ? `<p>Haz clic en el botón de abajo para obtener tus 4 dígitos:</p>
+                       <a href="${netflixLink}" target="_blank" class="boton">CÓDIGO VER TEMPORALMENTE</a>` 
+                    : `<p class="no-codigo">No se han recibido códigos de Netflix en las últimas 24 horas.</p>`
+                }
+            </div>
+            <img src="/gojo.png" class="corner-goku" alt="Decoracion">
+        </body>
+        </html>
         `);
-    } catch (err) { res.status(500).send("Error de Servidor"); }
+    } catch (err) { 
+        console.error(err);
+        res.status(500).send("Error de Servidor"); 
+    }
 });
+
 // Ruta principal para que UptimeRobot vea que el servidor está vivo
 app.get('/', (req, res) => {
     res.status(200).send("El servidor de Netflix está ACTIVO y DESPIERTO 🟢");
 });
-app.listen(PORT, () => console.log("Servidor listo"));
+
+app.listen(PORT, () => console.log("Servidor listo en el puerto " + PORT));
