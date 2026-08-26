@@ -12,8 +12,10 @@ app.use(express.static(__dirname));
 const auth = new google.auth.GoogleAuth({
     keyFile: path.join(__dirname, 'credenciales.json'),
     scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+    clientOptions: {
+        subject: 'ronaldogomez1331@gmail.com'
+    }
 });
-
 // Ruta para extraer el código del cliente
 app.get('/cliente/:telefono', async (req, res) => {
     try {
