@@ -125,9 +125,9 @@ app.get('/cliente/:telefono', async (req, res) => {
         </body>
         </html>
         `);
-    } catch (err) { 
+ } catch (err) { 
         console.error(err);
-        res.status(500).send("Error de Servidor"); 
+        res.status(500).send("<h1>El error exacto es:</h1><p>" + err.toString() + "</p>"); 
     }
 });
 
