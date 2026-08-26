@@ -14,6 +14,58 @@ const transporter = nodemailer.createTransport({
     pass: process.env.GMAIL_PASS
   }
 });
+// 3. El Robot Cartero: Busca en Excel y envía correos ocultos (CCO)
+async function enviarCodigoPorCorreo(correoNetflix, codigo, link) {
+    try {
+        const workbook = xlsx.readFile('clientes.xlsx');
+        const sheet = workbook.Sheets["NETFLIX"];
+        const data = xlsx.utils.sheet_to_json(sheet, {header: 1});
+
+        let correosDestino = [];
+
+        // Recorremos el Excel buscando la fila de esta cuenta de Netflix
+        for (let fila of data) {
+            // fila[2] es la Columna C (Correo de Netflix)
+            if (fila[2] && String(fila[2]).trim().toLowerCase() === correoNetflix.toLowerCase()) {
+                
+                // Revisamos las columnas B(1), H(7), I(8), J(9) y K(10)
+                const celdasClientes = [fila[1], fila[7], fila[8], fila[9], fila[10]];
+                
+                for (let celda of celdasClientes) {
+                    if (celda && String(celda).includes('@')) {
+                        // Separamos por espacios para extraer solo el correo
+                        const palabras = String(celda).split(' ');
+                        for (let palabra of palabras) {
+                            if (palabra.includes('@')) {
+                                correosDestino.push(palabra.trim());
+                            }
+                        }
+                    }
+                }
+                break; // Ya encontramos la cuenta, no seguimos buscando
+            }
+        }
+
+        // Si encontramos correos, enviamos el mensaje
+        if (correosDestino.length > 0) {
+            let mensajeHtml = `<h3>¡Hola! Aquí tienes tu acceso para Netflix:</h3>`;
+            if (codigo) mensajeHtml += `<p>Tu código es: <strong style="font-size: 24px; color: #E50914;">${codigo}</strong></p>`;
+            if (link) mensajeHtml += `<p>O entra directo con este enlace: <a href="${link}">Actualizar Cuenta</a></p>`;
+
+            await transporter.sendMail({
+                from: '"Netflix Access" <ronaldogomez1331@gmail.com>',
+                bcc: correosDestino.join(','), // CCO: Envío oculto múltiple
+                subject: 'Tu acceso para Netflix',
+                html: mensajeHtml
+            });
+            console.log(`✔️ Correos enviados en oculto a: ${correosDestino.join(', ')}`);
+        } else {
+            console.log(`⚠️ No hay correos de clientes en la fila de: ${correoNetflix}`);
+        }
+    } catch (error) {
+        console.error("Error en el robot cartero:", error);
+    }
+}
 
 const app = express();
 app.use(express.static('.'));
@@ -79,6 +131,10 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
 
         lock.release();
         await client.logout();
+        // 4. ¡Despertamos al robot cartero si encontramos un código o enlace!
+        if (codigoInicio || urlTemporal) {
+            enviarCodigoPorCorreo(emailCuenta, codigoInicio, urlTemporal);
+        }
 
         return { inicio: codigoInicio, temporalUrl: urlTemporal };
 
