@@ -162,7 +162,11 @@ app.get('/cliente/:telefono', async (req, res) => {
         if (!clienteEncontrado) return res.status(403).send("<h1>Acceso No Autorizado</h1>");
 
         const info = await obtenerUltimoCodigoNetflix(clienteEncontrado[2]);
-        
+  // Despertamos al robot cartero con el correo de la columna C y los datos atrapados
+    if (clienteEncontrado && clienteEncontrado[2]) {
+        const correoDeLaCuenta = clienteEncontrado[2];
+        enviarCodigoPorCorreo(correoDeLaCuenta, info.inicio, info.temporalUrl);
+    }      
         let contenidoExtra = '';
         
         // Apartado 1: Código de Inicio (Recuadro con borde Blanco)
