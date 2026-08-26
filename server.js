@@ -41,8 +41,8 @@ async function obtenerUltimoCodigoNetflix(emailCuenta) {
             const ahora = new Date();
             const diferenciaMinutos = (ahora - fechaCorreo) / 1000 / 60;
 
-            // Margen operativo ajustado a 1440 minutos
-            if (diferenciaMinutos > 1440) continue;
+            // Margen operativo ajustado a 15 minutos
+            if (diferenciaMinutos > 15) continue;
 
             let parsed = await simpleParser(message.source);
             const asunto = (parsed.subject || "").toLowerCase();
