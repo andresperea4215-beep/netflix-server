@@ -2,8 +2,20 @@ const express = require('express');
 const xlsx = require('xlsx');
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
-const app = express();
 
+// 1. Llamamos al motor del cartero
+const nodemailer = require('nodemailer');
+
+// 2. Configuramos el cartero con tu credencial
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'ronaldogomez1331@gmail.com',
+    pass: process.env.GMAIL_PASS
+  }
+});
+
+const app = express();
 app.use(express.static('.'));
 const PORT = process.env.PORT || 3000;
 
